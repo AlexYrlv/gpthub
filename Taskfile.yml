@@ -1,0 +1,229 @@
+version: "3"
+
+silent: true
+
+vars:
+  PACKAGE: gpthub
+  IMAGE: '{{.IMAGE | default "gpthub-backend"}}'
+  TAG: '{{.TAG | default "latest"}}'
+  API_URL: '{{.API_URL | default "http://localhost:8000"}}'
+  CHECK_URL: '{{.CHECK_URL | default "http://localhost:8000/v1/health"}}'
+  CHECK_TIMEOUT: '{{.CHECK_TIMEOUT | default "60"}}'
+  ENVIRONMENT: '{{.ENVIRONMENT | default "production"}}'
+  RUFF_ENABLE: '{{.RUFF_ENABLE | default "true"}}'
+
+env:
+  POETRY_VIRTUALENVS_CREATE: "false"
+
+tasks:
+  default:
+    deps:
+      - info
+
+  info:
+    desc: Project info
+    cmds:
+      - echo "---"
+      - poetry version
+      - echo "---"
+
+  # === Execution ===
+
+  server:
+    desc: Run API server
+    cmds:
+      - task: _python-manage
+        vars:
+          CLI_ARGS: run server
+
+  run:
+    desc: Run command
+    cmds:
+      - task: _python-manage
+        vars:
+          CLI_ARGS: "run {{.CLI_ARGS}}"
+
+  worker:memorize:
+    desc: Run memorize worker
+    cmds:
+      - task: _python-manage
+        vars:
+          CLI_ARGS: run worker.memorize
+
+  debug:
+    desc: Debug command
+    cmds:
+      - task: _python-manage
+        vars:
+          CLI_ARGS: "debug {{.CLI_ARGS}}"
+
+  cli:
+    desc: Generic manage.py command
+    cmds:
+      - task: _python-manage
+        vars:
+          CLI_ARGS: "{{.CLI_ARGS}}"
+
+  shell:
+    desc: Python REPL with app context
+    cmds:
+      - task: _python-manage
+        vars:
+          CLI_ARGS: shell
+
+  check.alive:
+    desc: Check service health
+    cmds:
+      - task: _python-manage
+        vars:
+          CLI_ARGS: "health alive -a {{.CHECK_URL}} -t {{.CHECK_TIMEOUT}}"
+
+  # === Lint ===
+
+  lint:
+    desc: Run all linters
+    cmds:
+      - task: lint-ruff
+
+  lint-ruff:
+    desc: Run ruff linter
+    cmds:
+      - echo "-- lint-ruff (enabled={{.RUFF_ENABLE}}) --"
+      - '{{if eq .RUFF_ENABLE "true"}} poetry run ruff check {{.PACKAGE}}/ tests/ {{end}}'
+
+  format:
+    desc: Format code
+    cmds:
+      - poetry run ruff format {{.PACKAGE}}/ tests/
+
+  check:
+    desc: Lint + Test
+    cmds:
+      - task: lint
+      - task: test
+
+  ci:
+    desc: Full CI pipeline (lint + test + docker build)
+    cmds:
+      - task: check
+      - task: docker:build
+
+  # === Test ===
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - poetry run pytest tests/ -v {{.CLI_ARGS}}
+
+  coverage:
+    desc: Run tests with coverage report
+    cmds:
+      - poetry run pytest tests/ -v --cov={{.PACKAGE}} --cov-report=term-missing {{.CLI_ARGS}}
+
+  # === Deps ===
+
+  install:
+    desc: Install dependencies
+    cmds:
+      - poetry install
+
+  deps:
+    desc: Regenerate lock file
+    cmds:
+      - poetry lock
+
+  deps-install:
+    desc: Install deps for environment
+    cmds:
+      - poetry install --no-root --only {{.GROUPS}}
+    vars:
+      GROUPS:
+        sh: |
+          case "{{.ENVIRONMENT}}" in
+            "develop" ) echo "main,dev" ;;
+            "testing" ) echo "main,dev" ;;
+            * ) echo "main" ;;
+          esac
+
+  # === Docker stack ===
+
+  up:
+    desc: Start full stack
+    cmds:
+      - docker compose up -d
+
+  down:
+    desc: Stop full stack
+    cmds:
+      - docker compose down
+
+  restart:
+    desc: Restart backend
+    cmds:
+      - docker compose restart backend
+
+  logs:
+    desc: Follow logs
+    cmds:
+      - docker compose logs -f {{.CLI_ARGS | default "backend"}}
+
+  ps:
+    desc: Show running services
+    cmds:
+      - docker compose ps
+
+  # === Docker image ===
+
+  docker:build:
+    desc: Build backend image
+    cmds:
+      - docker buildx build --compress --rm -t {{.IMAGE}}:{{.TAG}} .
+
+  docker:push:
+    desc: Push backend image
+    cmds:
+      - docker push {{.IMAGE}}:{{.TAG}}
+
+  # === Smoke tests ===
+
+  smoke:models:
+    desc: GET /v1/models
+    cmds:
+      - curl -fsS {{.API_URL}}/v1/models | python3 -m json.tool | head -30
+
+  smoke:chat:
+    desc: POST /v1/chat/completions
+    cmds:
+      - |
+        curl -fsS -X POST {{.API_URL}}/v1/chat/completions \
+          -H "Content-Type: application/json" \
+          -d '{"model":"auto","messages":[{"role":"user","content":"hi"}]}' \
+          | python3 -m json.tool
+
+  # === Services ===
+
+  redis:cli:
+    desc: Open Redis CLI
+    cmds:
+      - docker compose exec redis redis-cli
+
+  mongo:cli:
+    desc: Open MongoDB shell
+    cmds:
+      - docker compose exec mongodb mongosh
+
+  # === Build ===
+
+  build:
+    desc: Build wheel package
+    cmds:
+      - poetry build -f wheel
+
+  version:
+    desc: Show version
+    cmds:
+      - poetry version
+
+  # === Internal ===
+
+  _python-manage: /usr/bin/env python manage.py {{.CLI_ARGS}}
