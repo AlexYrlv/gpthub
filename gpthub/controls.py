@@ -1,10 +1,7 @@
-import base64
-import uuid
 from asyncio import gather
 from io import BytesIO
 
 from pptx import Presentation
-from pptx.util import Inches
 
 from .baseclasses import BaseControl
 from .clients import S3Client, WebParserClient, WebSearchClient
@@ -70,6 +67,7 @@ from .utils import (
     chunk_text,
     extract_text_from_file,
     is_duplicate_memory,
+    new_short_id,
     score_chunks,
     score_memories,
     serialize,
@@ -199,7 +197,7 @@ class PresentationControl(BaseControl):
         prs.save(buffer)
 
         return await self.s3.upload(File.create({
-            "name": f"presentation-{uuid.uuid4().hex[:8]}",
+            "name": f"presentation-{new_short_id()}",
             "content": buffer.getvalue(),
             "extension": EXTENSION.PPTX,
         }))
@@ -324,7 +322,7 @@ class GPTHubControl(BaseControl):
         if (response := await self.chat.chat_with_tools(request)).has_tool_calls:
             return await self.llm.chat_completions(request.with_tool_results(
                 response.choices[0].message,
-                await self._execute_tools(response.tool_calls, request.user_id),
+                await self.execute_tools(response.tool_calls, request.user_id),
             ).set_model(await self.chat.pick_available(MODEL_TYPE.TOOL_CALL)))
 
         return response
@@ -332,7 +330,7 @@ class GPTHubControl(BaseControl):
     async def process_chat_stream(self, request: ChatRequest):
         if request.needs_research and not request.tools_disabled:
             yield serialize(TraceEvent.research_start(request.model).to_dict())
-            subqueries = (await self._research_subqueries(request.last_text))[:RESEARCH_MAX_SUBQUERIES]
+            subqueries = (await self.research_subqueries(request.last_text))[:RESEARCH_MAX_SUBQUERIES]
             for i, q in enumerate(subqueries, 1):
                 yield serialize(TraceEvent.subquery(i, q, request.model).to_dict())
             results = await gather(*[
@@ -355,7 +353,7 @@ class GPTHubControl(BaseControl):
         if (response := await self.chat.chat_with_tools(request)).has_tool_calls:
             for call in response.tool_calls:
                 yield serialize(TraceEvent.tool_call(call, request.model).to_dict())
-            tool_results = await self._execute_tools(response.tool_calls, request.user_id)
+            tool_results = await self.execute_tools(response.tool_calls, request.user_id)
             yield serialize(TraceEvent.tools_done(len(tool_results), request.model).to_dict())
             request = request.with_tool_results(
                 response.choices[0].message, tool_results,
@@ -367,7 +365,7 @@ class GPTHubControl(BaseControl):
         yield serialize(response.to_dict())
 
     async def enrich_with_research(self, request: ChatRequest) -> ChatRequest:
-        subqueries = await self._research_subqueries(request.last_text)
+        subqueries = await self.research_subqueries(request.last_text)
         self.logger.info("Deep research: %d subqueries", len(subqueries))
 
         results = await gather(*[
@@ -377,7 +375,7 @@ class GPTHubControl(BaseControl):
         pages = [page for batch in results for page in batch]
         return request.with_context(build_research_context(subqueries, pages))
 
-    async def _research_subqueries(self, query: str) -> list[str]:
+    async def research_subqueries(self, query: str) -> list[str]:
         response = await self.llm.chat_completions_with_tools(
             ChatRequest.create({
                 "model": await self.chat.pick_available(MODEL_TYPE.TOOL_CALL),
@@ -391,40 +389,40 @@ class GPTHubControl(BaseControl):
             return []
         return response.tool_calls[0].parse_as(GenerateSubqueries).queries
 
-    async def _execute_tools(self, tool_calls: list[ToolCall], uid: str) -> list[Message]:
+    async def execute_tools(self, tool_calls: list[ToolCall], uid: str) -> list[Message]:
         return [
-            Message(role="tool", content=await self._dispatch_tool(call, uid), tool_call_id=call.id)
+            Message(role="tool", content=await self.dispatch_tool(call, uid), tool_call_id=call.id)
             for call in tool_calls
         ]
 
-    async def _dispatch_tool(self, call: ToolCall, uid: str) -> str:
+    async def dispatch_tool(self, call: ToolCall, uid: str) -> str:
         match call.tool_name:
             case TOOL_NAME.WebSearch:
-                return await self._on_web_search(call)
+                return await self.run_web_search(call)
             case TOOL_NAME.RecallMemory:
-                return await self._on_recall_memory(call, uid)
+                return await self.run_recall_memory(call, uid)
             case TOOL_NAME.SearchFiles:
-                return await self._on_search_files(call, uid)
+                return await self.run_search_files(call, uid)
             case TOOL_NAME.ParseUrl:
-                return await self._on_parse_url(call)
+                return await self.run_parse_url(call)
             case TOOL_NAME.BuildPresentation:
-                return await self._on_build_presentation(call)
+                return await self.run_build_presentation(call)
             case _:
                 self.logger.warning("Unknown tool: %s", call.name)
                 return ""
 
-    async def _on_web_search(self, call: ToolCall) -> str:
+    async def run_web_search(self, call: ToolCall) -> str:
         return build_web_context(await self.search.search(call.parsed_arguments["query"]))
 
-    async def _on_recall_memory(self, call: ToolCall, uid: str) -> str:
+    async def run_recall_memory(self, call: ToolCall, uid: str) -> str:
         return build_memory_context(await self.memory.recall(call.parsed_arguments["query"], uid))
 
-    async def _on_search_files(self, call: ToolCall, uid: str) -> str:
+    async def run_search_files(self, call: ToolCall, uid: str) -> str:
         return build_file_context(await self.files.search(call.parsed_arguments["query"], uid))
 
-    async def _on_parse_url(self, call: ToolCall) -> str:
+    async def run_parse_url(self, call: ToolCall) -> str:
         return (await self.parser.get(call.parsed_arguments["url"])).text
 
-    async def _on_build_presentation(self, call: ToolCall) -> str:
+    async def run_build_presentation(self, call: ToolCall) -> str:
         params = call.parse_as(BuildPresentation)
         return build_file_link(await self.presentation.generate(params.title, params.slides))

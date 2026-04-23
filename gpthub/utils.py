@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import re
+import uuid
 from functools import partial
 from io import BytesIO
 
@@ -170,6 +171,14 @@ def score_chunks(query_emb: list[float], files, top_k: int = 4) -> list[str]:
 
 def serialize(data: dict) -> str:
     return json.dumps(data)
+
+
+def new_short_id() -> str:
+    return uuid.uuid4().hex[:8]
+
+
+def parse_tool_args(raw: str) -> dict:
+    return json.loads(raw)
 
 
 def build_file_context(chunks) -> str:

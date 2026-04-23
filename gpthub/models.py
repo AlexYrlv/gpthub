@@ -4,6 +4,8 @@ import typing as t
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from .utils import new_short_id
+
 ALLOWED_ROLES: t.Final = frozenset({"system", "user", "assistant", "tool"})
 
 
@@ -73,10 +75,8 @@ class MemorizeData(BaseModel):
 
     @classmethod
     def from_request(cls, request) -> MemorizeData:
-        import uuid
-
         return cls(
-            request_id=uuid.uuid4().hex[:8],
+            request_id=new_short_id(),
             messages=[m.to_dict() for m in request.messages],
             model=request.model,
             uid=request.user_id,

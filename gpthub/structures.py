@@ -170,6 +170,8 @@ class ChatRequest:
         return replace(self, model=model)
 
     def set_messages(self, messages: list[Message]) -> ChatRequest:
+        if messages == self.messages:
+            return self
         return replace(self, messages=messages)
 
     def set_user_id(self, user_id: str | None) -> ChatRequest:

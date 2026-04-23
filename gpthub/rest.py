@@ -89,7 +89,7 @@ class LLMProviderAPI(BaseAPI):
             data={"model": model},
             files=[("file", (upload.filename, upload.data, upload.content_type))],
         )
-        return TranscriptionResult(text=response.get("text", "") if isinstance(response, dict) else "", model=model)
+        return TranscriptionResult.create({**response, "model": model})
 
     async def generate_image(self, request: ChatRequest) -> GeneratedImage:
         self.logger.info("Image generation: model=%s", request.model)
