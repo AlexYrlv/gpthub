@@ -64,6 +64,7 @@ class LLM_MODEL(StrEnum):  # noqa: N801
     QWEN3_CODER = "qwen3-coder-480b-a35b"
 
     # Vision (VLM)
+    COTYPE_VL = "cotype-pro-vl-32b"
     QWEN_VL = "qwen2.5-vl"
     QWEN_VL_72B = "qwen2.5-vl-72b"
     QWEN3_VL = "qwen3-vl-30b-a3b-instruct"
