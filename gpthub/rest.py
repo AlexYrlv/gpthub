@@ -67,11 +67,11 @@ class LLMProviderAPI(BaseAPI):
         response = await self.client("get", self.routes.MODELS.name)
         return ModelList.create(response)
 
-    async def is_available(self) -> bool:
+    async def safe_get_models(self) -> ModelList | None:
         try:
-            return bool((await self.get_models()).data)
+            return await self.get_models()
         except Exception:
-            return False
+            return None
 
     @acached(ttl=CACHE_TTL_EMBEDDING)
     async def get_embeddings(self, text: str, model: str = "bge-m3") -> list[float]:

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from asyncio import to_thread
+from io import BytesIO
 
 from aioboto3 import Session
 from aiobotocore.client import AioBaseClient
 from config_fastapi import Config
 from duckduckgo_search import DDGS
+from pptx import Presentation
 from webparser.http import HttpParser
 
 from .constants import CACHE_TTL_WEB_PAGE, CACHE_TTL_WEB_SEARCH, WEB_SEARCH_MAX_RESULTS
@@ -62,6 +64,25 @@ class WebSearchClient:
             })
             for r in results
         ]
+
+
+class PPTXClient:
+
+    async def build(self, title: str, slides: list) -> bytes:
+        def render() -> bytes:
+            prs = Presentation()
+            prs.slides.add_slide(prs.slide_layouts[0]).shapes.title.text = title
+            for slide_data in slides:
+                slide = prs.slides.add_slide(prs.slide_layouts[1])
+                slide.shapes.title.text = slide_data.title
+                body = slide.shapes.placeholders[1].text_frame
+                body.text = slide_data.bullets[0] if slide_data.bullets else ""
+                for bullet in slide_data.bullets[1:]:
+                    body.add_paragraph().text = bullet
+            buffer = BytesIO()
+            prs.save(buffer)
+            return buffer.getvalue()
+        return await to_thread(render)
 
 
 class S3Client:

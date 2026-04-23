@@ -1,10 +1,7 @@
 from asyncio import gather
-from io import BytesIO
-
-from pptx import Presentation
 
 from .baseclasses import BaseControl
-from .clients import S3Client, WebParserClient, WebSearchClient
+from .clients import PPTXClient, S3Client, WebParserClient, WebSearchClient
 from .constants import (
     DEFAULT_USER_ID,
     EXTENSION,
@@ -32,6 +29,7 @@ from .constants import (
 from .exceptions import ImageGenerationError
 from .models import (
     BuildPresentation,
+    ExtractedFact,
     GenerateSubqueries,
     ParseUrl,
     RecallMemory,
@@ -96,16 +94,18 @@ class MemoryControl(BaseControl):
                 continue
             if is_duplicate_memory(emb, existing, MEMORY_DEDUP_THRESHOLD):
                 continue
-            memory = await Memory(
-                user_id=uid, fact=extracted.fact, source=extracted.category,
-            ).set_embedding(emb).save()
+            memory = await Memory.create({
+                "user_id": uid,
+                "fact": extracted.fact,
+                "source": extracted.category,
+            }).set_embedding(emb).save()
             saved.append(memory)
             existing.append(memory)
 
         self.logger.debug("Memorized %s facts", len(saved))
         return saved
 
-    async def extract_facts(self, dialogue: str) -> list:
+    async def extract_facts(self, dialogue: str) -> list[ExtractedFact]:
         response = await self.llm.chat_completions_with_tools(
             ChatRequest.create({
                 "model": await self.chat.pick_available(MODEL_TYPE.TOOL_CALL),
@@ -160,9 +160,9 @@ class HealthControl(BaseControl):
         self.llm = LLMProviderAPI()
 
     async def status(self) -> HealthStatus:
-        if not await self.llm.is_available():
+        if (models := await self.llm.safe_get_models()) is None or not models.data:
             return HealthStatus.degraded()
-        return HealthStatus.ok(len((await self.llm.get_models()).data))
+        return HealthStatus.ok(len(models.data))
 
 
 class AudioControl(BaseControl):
@@ -179,26 +179,13 @@ class AudioControl(BaseControl):
 class PresentationControl(BaseControl):
 
     def __init__(self):
+        self.pptx = PPTXClient()
         self.s3 = S3Client()
 
     async def generate(self, title: str, slides: list) -> File:
-        prs = Presentation()
-        prs.slides.add_slide(prs.slide_layouts[0]).shapes.title.text = title
-
-        for slide_data in slides:
-            slide = prs.slides.add_slide(prs.slide_layouts[1])
-            slide.shapes.title.text = slide_data.title
-            body = slide.shapes.placeholders[1].text_frame
-            body.text = slide_data.bullets[0] if slide_data.bullets else ""
-            for bullet in slide_data.bullets[1:]:
-                body.add_paragraph().text = bullet
-
-        buffer = BytesIO()
-        prs.save(buffer)
-
         return await self.s3.upload(File.create({
             "name": f"presentation-{new_short_id()}",
-            "content": buffer.getvalue(),
+            "content": await self.pptx.build(title, slides),
             "extension": EXTENSION.PPTX,
         }))
 
@@ -314,9 +301,7 @@ class GPTHubControl(BaseControl):
             request = await self.enrich_with_research(request)
 
         routing = await self.chat.resolve(request)
-        if request.tools_disabled or (not request.needs_presentation and routing.model_type in (
-            MODEL_TYPE.IMAGE_GEN, MODEL_TYPE.VISION, MODEL_TYPE.CODE, MODEL_TYPE.REASONING,
-        )):
+        if request.tools_disabled or (not request.needs_presentation and routing.is_single_purpose):
             return await self.chat.chat(request)
 
         if (response := await self.chat.chat_with_tools(request)).has_tool_calls:
@@ -343,9 +328,7 @@ class GPTHubControl(BaseControl):
         routing = await self.chat.resolve(request)
         yield serialize(TraceEvent.route(routing, request.model).to_dict())
 
-        if request.tools_disabled or (not request.needs_presentation and routing.model_type in (
-            MODEL_TYPE.IMAGE_GEN, MODEL_TYPE.VISION, MODEL_TYPE.CODE, MODEL_TYPE.REASONING,
-        )):
+        if request.tools_disabled or (not request.needs_presentation and routing.is_single_purpose):
             async for chunk in self.chat.chat_stream(request):
                 yield chunk
             return

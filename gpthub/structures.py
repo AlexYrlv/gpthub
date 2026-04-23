@@ -12,6 +12,7 @@ from .constants import (
     MODEL_TYPE,
     PRESENTATION_KEYWORDS,
     RESEARCH_KEYWORDS,
+    SINGLE_PURPOSE_MODEL_TYPES,
     TOOL_NAME,
 )
 from .models import ChatCompletionData, ChatMessageData
@@ -374,6 +375,10 @@ class RoutingResult:
         if data.get("auto_routed") is not None:
             result = replace(result, auto_routed=data["auto_routed"])
         return result
+
+    @property
+    def is_single_purpose(self) -> bool:
+        return self.model_type in SINGLE_PURPOSE_MODEL_TYPES
 
     def to_dict(self) -> dict:
         return {
