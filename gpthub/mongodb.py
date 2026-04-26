@@ -11,7 +11,12 @@ class DateTimeMixin:
     updated_at = f.DateTimeField(default=datetime.now)
 
 
-class MemoryModel(Document, DateTimeMixin):
+class ActiveMixin:
+    active = f.BooleanField(default=True)
+    deleted = f.BooleanField(default=False)
+
+
+class MemoryModel(Document, DateTimeMixin, ActiveMixin):
     __collection__ = "memories"
 
     user_id = f.StringField(required=True)
@@ -20,7 +25,7 @@ class MemoryModel(Document, DateTimeMixin):
     embedding = f.ListField(f.FloatField())
 
 
-class FileContextModel(Document, DateTimeMixin):
+class FileContextModel(Document, DateTimeMixin, ActiveMixin):
     __collection__ = "files"
 
     user_id = f.StringField(required=True)
@@ -31,10 +36,8 @@ class FileContextModel(Document, DateTimeMixin):
 
 
 async def find_memories_by_user(user_id: str) -> list[MemoryModel]:
-    return await MemoryModel.objects(user_id=user_id).all()
+    return await MemoryModel.objects(user_id=user_id, deleted=False).all()
 
 
 async def find_files_by_user(user_id: str) -> list[FileContextModel]:
-    return await FileContextModel.objects(user_id=user_id).all()
-
-
+    return await FileContextModel.objects(user_id=user_id, deleted=False).all()
