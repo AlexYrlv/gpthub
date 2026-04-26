@@ -88,7 +88,7 @@ paths:
               schema:
                 title: SSE-поток
                 type: string
-                description: Каждое событие — `data: {chunk}\n\n`. Завершение — `data: [DONE]\n\n`.
+                description: 'Каждое событие — `data: {chunk}\n\n`. Завершение — `data: [DONE]\n\n`.'
                 example: |
                   data: {"choices":[{"delta":{"content":"Hi"}}]}
 
