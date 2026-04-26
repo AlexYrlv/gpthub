@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from logging import getLogger
 
 from fastabc import Api, App
@@ -45,7 +47,8 @@ def init(app: App) -> Api:
 class HealthResource(BaseResource):
     logger = LOGGER
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.health = HealthControl()
 
     async def get(self, _: Request) -> Response:
@@ -55,7 +58,8 @@ class HealthResource(BaseResource):
 class ChatCompletionsResource(BaseResource):
     logger = LOGGER
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.control = GPTHubControl()
         self.rpc = MemorizeRPC()
 
@@ -77,7 +81,8 @@ class ChatCompletionsResource(BaseResource):
 class ModelsResource(BaseResource):
     logger = LOGGER
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.chat = ChatControl()
 
     async def get(self, _: Request) -> Response:
@@ -87,7 +92,8 @@ class ModelsResource(BaseResource):
 class AudioTranscriptionsResource(BaseResource):
     logger = LOGGER
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.audio = AudioControl()
 
     async def post(self, request: Request) -> Response:
@@ -103,7 +109,8 @@ class AudioTranscriptionsResource(BaseResource):
 class FilesResource(BaseResource):
     logger = LOGGER
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.files = FileControl()
 
     async def post(self, request: Request) -> Response:

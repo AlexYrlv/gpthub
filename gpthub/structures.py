@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import uuid
 from dataclasses import dataclass, replace
 from dataclasses import field as f
 from datetime import datetime
@@ -308,9 +306,10 @@ class ChatResponse:
 
     @classmethod
     def from_image(cls, image: GeneratedImage, model: str, prompt: str) -> ChatResponse:
+        from .utils import new_short_id
         src = image.url or f"data:image/png;base64,{image.b64_json}"
         return cls(
-            id=f"imggen-{uuid.uuid4().hex[:8]}",
+            id=f"imggen-{new_short_id()}",
             model=model,
             choices=[ChatChoice(message=Message(
                 role="assistant",
@@ -550,7 +549,8 @@ class ToolCall:
 
     @property
     def parsed_arguments(self) -> dict:
-        return json.loads(self.arguments)
+        from .utils import parse_tool_args
+        return parse_tool_args(self.arguments)
 
     @property
     def trace_summary(self) -> str:
@@ -671,8 +671,9 @@ class TraceEvent:
         return cls(text=f"✅ Выполнено инструментов: {count}", model=model)
 
     def to_dict(self) -> dict:
+        from .utils import new_short_id
         return {
-            "id": f"chatcmpl-trace-{uuid.uuid4().hex[:8]}",
+            "id": f"chatcmpl-trace-{new_short_id()}",
             "object": "chat.completion.chunk",
             "created": int(datetime.now().timestamp()),
             "model": self.model,
