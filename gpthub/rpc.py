@@ -24,3 +24,6 @@ class MemorizeRPC(BaseRPC):
 
     async def done(self, oid: str) -> None:
         await self.pubsub.done(oid)
+
+    async def retry(self, oid: str) -> None:
+        await self.pubsub.retry(oid=oid, first=True)

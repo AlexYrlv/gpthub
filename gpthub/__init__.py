@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from asyncio import AbstractEventLoop
+from functools import cache
 from logging.config import dictConfig
 
 import motorengine
@@ -46,6 +47,7 @@ def create_actors() -> ActorApp:
     return actors.init(__name__)
 
 
+@cache
 def application_config() -> Config:
     config = Config(file_path="config_fastapi.json")
 
