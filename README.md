@@ -33,8 +33,8 @@ docker compose up -d
 
 ## Документация
 
-- Архитектура: [docs/architecture.md](docs/architecture.md)
-- API спецификация: [docs/openapi.yml](docs/openapi.yml)
+- Архитектура: [ARCHITECTURE.md](ARCHITECTURE.md)
+- API спецификация: [docs/openapi.yml](docs/openapi.yml) · [интерактивный просмотр (Redoc)](https://alexyrlv.github.io/gpthub/)
 
 ## Troubleshooting
 
