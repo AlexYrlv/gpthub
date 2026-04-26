@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from asyncio import gather
 
 from .baseclasses import BaseControl
@@ -130,24 +132,24 @@ class FileControl(BaseControl):
     async def ingest(self, upload: FileUpload) -> FileContext:
         if not (text := extract_text_from_file(upload.data, upload.filename, upload.content_type)):
             self.logger.warning("Empty file: %s", upload.filename)
-            return FileContext(
-                user_id=upload.user_id,
-                filename=upload.filename,
-                content_type=upload.content_type,
-            )
+            return FileContext.create({
+                "user_id": upload.user_id,
+                "filename": upload.filename,
+                "content_type": upload.content_type,
+            })
 
         chunks = chunk_text(text, RAG_CHUNK_SIZE, RAG_CHUNK_OVERLAP)
         self.logger.debug("Ingesting file: %s (%d chunks)", upload.filename, len(chunks))
 
         embeddings = await gather(*[self.llm.get_embeddings(chunk) for chunk in chunks])
 
-        return await FileContext(
-            user_id=upload.user_id,
-            filename=upload.filename,
-            content_type=upload.content_type,
-            chunks=chunks,
-            embeddings=embeddings,
-        ).save()
+        return await FileContext.create({
+            "user_id": upload.user_id,
+            "filename": upload.filename,
+            "content_type": upload.content_type,
+            "chunks": chunks,
+            "embeddings": embeddings,
+        }).save()
 
     async def search(self, query: str, uid: str = DEFAULT_USER_ID, top_k: int = RAG_TOP_K) -> list[str]:
         files = [FileContext.from_mongo(m) for m in await find_files_by_user(uid)]
@@ -230,10 +232,12 @@ class ChatControl(BaseControl):
         routing = await self.resolve(request)
         request = request.set_model(routing.model)
 
-        if routing.model_type is MODEL_TYPE.IMAGE_GEN:
-            return await self.image_gen(request)
-        if routing.model_type is MODEL_TYPE.VISION:
-            return await self.llm.chat_completions(await self.prepare_vision(request))
+        match routing.model_type:
+            case MODEL_TYPE.IMAGE_GEN:
+                return await self.image_gen(request)
+            case MODEL_TYPE.VISION:
+                return await self.llm.chat_completions(await self.prepare_vision(request))
+
         if request.needs_presentation:
             request = request.with_context(PRESENTATION_CONTEXT)
 
@@ -315,13 +319,10 @@ class GPTHubControl(BaseControl):
     async def process_chat_stream(self, request: ChatRequest):
         if request.needs_research and not request.tools_disabled:
             yield serialize(TraceEvent.research_start(request.model).to_dict())
-            subqueries = (await self.research_subqueries(request.last_text))[:RESEARCH_MAX_SUBQUERIES]
+            subqueries = await self.plan_research(request.last_text)
             for i, q in enumerate(subqueries, 1):
                 yield serialize(TraceEvent.subquery(i, q, request.model).to_dict())
-            results = await gather(*[
-                self.search.search(q, max_results=RESEARCH_RESULTS_PER_QUERY) for q in subqueries
-            ])
-            pages = [page for batch in results for page in batch]
+            pages = await self.fetch_research(subqueries)
             yield serialize(TraceEvent.research_done(len(pages), request.model).to_dict())
             request = request.with_context(build_research_context(subqueries, pages))
 
@@ -348,15 +349,19 @@ class GPTHubControl(BaseControl):
         yield serialize(response.to_dict())
 
     async def enrich_with_research(self, request: ChatRequest) -> ChatRequest:
-        subqueries = await self.research_subqueries(request.last_text)
+        subqueries = await self.plan_research(request.last_text)
         self.logger.info("Deep research: %d subqueries", len(subqueries))
-
-        results = await gather(*[
-            self.search.search(q, max_results=RESEARCH_RESULTS_PER_QUERY)
-            for q in subqueries[:RESEARCH_MAX_SUBQUERIES]
-        ])
-        pages = [page for batch in results for page in batch]
+        pages = await self.fetch_research(subqueries)
         return request.with_context(build_research_context(subqueries, pages))
+
+    async def plan_research(self, last_text: str) -> list[str]:
+        return (await self.research_subqueries(last_text))[:RESEARCH_MAX_SUBQUERIES]
+
+    async def fetch_research(self, subqueries: list[str]) -> list:
+        results = await gather(*[
+            self.search.search(q, max_results=RESEARCH_RESULTS_PER_QUERY) for q in subqueries
+        ])
+        return [page for batch in results for page in batch]
 
     async def research_subqueries(self, query: str) -> list[str]:
         response = await self.llm.chat_completions_with_tools(
