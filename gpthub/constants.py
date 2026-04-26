@@ -33,12 +33,12 @@ class TOOL_NAME(Enum):
             return TOOL_NAME.unknown
 
 
-class REST_ENDPOINTS_LLM(Enum):  # noqa: N801
-    CHAT_COMPLETIONS = "chat/completions"
-    MODELS = "models"
-    EMBEDDINGS = "embeddings"
-    AUDIO_TRANSCRIPTIONS = "audio/transcriptions"
-    IMAGES_GENERATIONS = "images/generations"
+class RestEndpointsLLM(Enum):
+    chat_completions = "chat/completions"
+    models = "models"
+    embeddings = "embeddings"
+    audio_transcriptions = "audio/transcriptions"
+    images_generations = "images/generations"
 
     @classmethod
     def to_routes(cls) -> dict[str, str]:
@@ -190,12 +190,6 @@ RESEARCH_KEYWORDS = frozenset({
     "обзор темы", "разбери тему", "всесторонн",
 })
 
-RESEARCH_SUBQUERY_PROMPT = (
-    "Разбей вопрос пользователя на 3-5 поисковых подзапросов для глубокого исследования. "
-    "Каждый подзапрос должен раскрывать отдельный аспект темы.\n\n"
-    "Вопрос: {query}"
-)
-
 RESEARCH_MAX_SUBQUERIES = 5
 RESEARCH_RESULTS_PER_QUERY = 3
 
@@ -209,11 +203,6 @@ MEMORY_DEDUP_THRESHOLD = 0.92
 EXTRACT_DIALOGUE_LIMIT = 2000
 EXTRACT_TEMPERATURE = 0.1
 EXTRACT_MAX_TOKENS = 500
-EXTRACT_PROMPT = (
-    "Проанализируй диалог и вызови save_facts для сохранения всех найденных фактов о пользователе. "
-    "Извлекай только конкретные факты: имя, профессию, город, интересы, предпочтения, навыки.\n\n"
-    "Диалог:\n{dialogue}"
-)
 
 PRESENTATION_KEYWORDS = frozenset({
     "презентаци", "слайд", "presentation", "slides",
@@ -221,13 +210,3 @@ PRESENTATION_KEYWORDS = frozenset({
     "создай презентацию", "make a presentation",
 })
 
-PRESENTATION_CONTEXT = (
-    "\n\nПользователь просит создать презентацию. Оформи ответ как набор слайдов:\n"
-    "- Каждый слайд начинается с заголовка '## Слайд N: Название'\n"
-    "- Разделяй слайды горизонтальной линией '---'\n"
-    "- На каждом слайде 3-5 тезисов в виде списка\n"
-    "- Первый слайд — титульный (заголовок + подзаголовок)\n"
-    "- Последний слайд — выводы или итоги\n"
-    "- Используй emoji для визуального акцента\n"
-    "- Оптимально 5-8 слайдов\n"
-)
