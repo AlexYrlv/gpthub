@@ -9,7 +9,6 @@ from .constants import (
     EXTENSION,
     EXTRACT_DIALOGUE_LIMIT,
     EXTRACT_MAX_TOKENS,
-    EXTRACT_PROMPT,
     EXTRACT_TEMPERATURE,
     IMAGE_GEN_MODELS,
     KEYWORD_ROUTING,
@@ -18,18 +17,19 @@ from .constants import (
     MODEL_FALLBACK,
     MODEL_ROUTING,
     MODEL_TYPE,
-    PRESENTATION_CONTEXT,
     RAG_CHUNK_OVERLAP,
     RAG_CHUNK_SIZE,
     RAG_TOP_K,
     RESEARCH_MAX_SUBQUERIES,
     RESEARCH_RESULTS_PER_QUERY,
-    RESEARCH_SUBQUERY_PROMPT,
     TOOL_NAME,
     VISION_MODELS,
 )
 from .exceptions import ImageGenerationError
-from .models import (
+from .mongodb import find_files_by_user, find_memories_by_user
+from .prompts import EXTRACT_FACTS, PRESENTATION_CONTEXT, RESEARCH_SUBQUERY
+from .rest import LLMProviderAPI
+from .tools import (
     BuildPresentation,
     ExtractedFact,
     GenerateSubqueries,
@@ -39,8 +39,6 @@ from .models import (
     SearchFiles,
     WebSearch,
 )
-from .mongodb import find_files_by_user, find_memories_by_user
-from .rest import LLMProviderAPI
 from .structures import (
     AudioUpload,
     ChatRequest,
@@ -111,7 +109,7 @@ class MemoryControl(BaseControl):
         response = await self.llm.chat_completions_with_tools(
             ChatRequest.create({
                 "model": await self.chat.pick_available(MODEL_TYPE.TOOL_CALL),
-                "messages": [{"role": "user", "content": EXTRACT_PROMPT.format(
+                "messages": [{"role": "user", "content": EXTRACT_FACTS.format(
                     dialogue=dialogue[:EXTRACT_DIALOGUE_LIMIT],
                 )}],
                 "temperature": EXTRACT_TEMPERATURE,
@@ -367,7 +365,7 @@ class GPTHubControl(BaseControl):
         response = await self.llm.chat_completions_with_tools(
             ChatRequest.create({
                 "model": await self.chat.pick_available(MODEL_TYPE.TOOL_CALL),
-                "messages": [{"role": "user", "content": RESEARCH_SUBQUERY_PROMPT.format(query=query)}],
+                "messages": [{"role": "user", "content": RESEARCH_SUBQUERY.format(query=query)}],
                 "temperature": EXTRACT_TEMPERATURE,
                 "max_tokens": EXTRACT_MAX_TOKENS,
             }),

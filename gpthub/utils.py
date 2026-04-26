@@ -181,6 +181,17 @@ def parse_tool_args(raw: str) -> dict:
     return json.loads(raw)
 
 
+def pydantic_to_tool(model) -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": model.__name__,
+            "description": (model.__doc__ or "").strip(),
+            "parameters": model.model_json_schema(),
+        },
+    }
+
+
 def build_file_context(chunks) -> str:
     if not chunks:
         return ""

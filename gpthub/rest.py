@@ -9,16 +9,15 @@ from .constants import (
     CACHE_TTL_MODELS,
     REST_DEFAULT_HEADERS,
     REST_DEFAULT_TIMEOUT,
-    REST_ENDPOINTS_LLM,
+    RestEndpointsLLM,
 )
-from .models import pydantic_to_tool
 from .structures import AudioUpload, ChatRequest, ChatResponse, GeneratedImage, ModelList, TranscriptionResult
-from .utils import acached
+from .utils import acached, pydantic_to_tool
 
 
 class LLMProviderAPI(BaseAPI):
     config = Config(section="api.llm")
-    routes = REST_ENDPOINTS_LLM
+    routes = RestEndpointsLLM
 
     @property
     def client(self) -> AsyncRestClient:
@@ -36,7 +35,7 @@ class LLMProviderAPI(BaseAPI):
         self.logger.info("Chat completion: model=%s", request.model)
         response = await self.client(
             "post",
-            self.routes.CHAT_COMPLETIONS.name,
+            self.routes.chat_completions.name,
             json=request.to_dict(),
         )
         return ChatResponse.create(response)
@@ -47,7 +46,7 @@ class LLMProviderAPI(BaseAPI):
         data["tool_choice"] = "auto"
         response = await self.client(
             "post",
-            self.routes.CHAT_COMPLETIONS.name,
+            self.routes.chat_completions.name,
             json=data,
         )
         return ChatResponse.create(response)
@@ -57,14 +56,14 @@ class LLMProviderAPI(BaseAPI):
         data["stream"] = True
         async for chunk in self.client.stream(
             "post",
-            self.routes.CHAT_COMPLETIONS.name,
+            self.routes.chat_completions.name,
             json=data,
         ):
             yield chunk
 
     @acached(ttl=CACHE_TTL_MODELS)
     async def get_models(self) -> ModelList:
-        response = await self.client("get", self.routes.MODELS.name)
+        response = await self.client("get", self.routes.models.name)
         return ModelList.create(response)
 
     async def safe_get_models(self) -> ModelList | None:
@@ -77,7 +76,7 @@ class LLMProviderAPI(BaseAPI):
     async def get_embeddings(self, text: str, model: str = "bge-m3") -> list[float]:
         response = await self.client(
             "post",
-            self.routes.EMBEDDINGS.name,
+            self.routes.embeddings.name,
             json={"model": model, "input": text},
         )
         return response["data"][0]["embedding"]
@@ -85,7 +84,7 @@ class LLMProviderAPI(BaseAPI):
     async def transcribe_audio(self, upload: AudioUpload, model: str) -> TranscriptionResult:
         response = await self.client(
             "post",
-            self.routes.AUDIO_TRANSCRIPTIONS.name,
+            self.routes.audio_transcriptions.name,
             data={"model": model},
             files=[("file", (upload.filename, upload.data, upload.content_type))],
         )
@@ -95,7 +94,7 @@ class LLMProviderAPI(BaseAPI):
         self.logger.info("Image generation: model=%s", request.model)
         response = await self.client(
             "post",
-            self.routes.IMAGES_GENERATIONS.name,
+            self.routes.images_generations.name,
             json={"model": request.model, "prompt": request.last_text, "n": 1, "size": "1024x1024"},
         )
         return GeneratedImage.create(response.get("data", [{}])[0])
