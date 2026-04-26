@@ -78,13 +78,14 @@ def show(cli: Cli) -> dict[str, Command]:
 
     def description():
         """Base information"""
-        poetry = load("pyproject.toml")["tool"]["poetry"]
+        project = load("pyproject.toml")["project"]
+        urls = project.get("urls", {})
 
-        table_print(poetry["name"])
+        table_print(project["name"])
         echo(
-            f"Version: {poetry['version']}\n"
-            f"Description: {poetry.get('description', 'unknown')}\n"
-            f"Repository: {poetry.get('repository', 'unset')}"
+            f"Version: {project['version']}\n"
+            f"Description: {project.get('description', 'unknown')}\n"
+            f"Repository: {urls.get('repository', 'unset')}"
         )
 
     def routes():
