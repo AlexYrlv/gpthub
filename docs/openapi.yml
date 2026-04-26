@@ -1,0 +1,382 @@
+openapi: 3.0.3
+info:
+  title: GPTHub API
+  version: 0.1.0
+  description: |
+    OpenAI-совместимый backend поверх любого LLM-провайдера: чат, голос, vision, RAG, function calling, долгосрочная память.
+
+tags:
+  - name: Chat
+  - name: Models
+  - name: Audio
+  - name: Files
+  - name: Health
+
+paths:
+  /v1/health:
+    get:
+      operationId: health.get
+      summary: Состояние сервиса
+      description: Проверка доступности LLM-провайдера и количества доступных моделей.
+      tags:
+        - Health
+      security: []
+      responses:
+        "200":
+          description: Сервис доступен
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        "500":
+          $ref: "#/components/responses/500"
+
+  /v1/models:
+    get:
+      operationId: models.list
+      summary: Список доступных моделей
+      description: Возвращает все модели LLM-провайдера плюс псевдомодель `auto` для авто-роутинга.
+      tags:
+        - Models
+      security: []
+      responses:
+        "200":
+          description: Список моделей
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelList"
+        "500":
+          $ref: "#/components/responses/500"
+
+  /v1/chat/completions:
+    post:
+      operationId: chat.completions
+      summary: Чат-комплишен
+      description: |
+        OpenAI-совместимый endpoint. Поддерживает:
+        - текстовый чат, multimodal (image_url) для VLM
+        - `model: auto` — автомаршрутизация по контенту
+        - `stream: true` — Server-Sent Events
+        - tool calling (web search, RAG, memory recall, URL parsing, PPTX)
+      tags:
+        - Chat
+      security: []
+      parameters:
+        - name: x-openwebui-user-id
+          in: header
+          required: false
+          description: Идентификатор пользователя для изоляции памяти и RAG
+          schema:
+            title: Идентификатор пользователя
+            type: string
+            example: user-42
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: Ответ модели (JSON или SSE-поток)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+            text/event-stream:
+              schema:
+                title: SSE-поток
+                type: string
+                description: Каждое событие — `data: {chunk}\n\n`. Завершение — `data: [DONE]\n\n`.
+                example: |
+                  data: {"choices":[{"delta":{"content":"Hi"}}]}
+
+                  data: [DONE]
+        "400":
+          $ref: "#/components/responses/400"
+        "404":
+          $ref: "#/components/responses/404"
+        "500":
+          $ref: "#/components/responses/500"
+
+  /v1/audio/transcriptions:
+    post:
+      operationId: audio.transcriptions
+      summary: Транскрипция аудио
+      description: ASR через выбранную модель (whisper-совместимая).
+      tags:
+        - Audio
+      security: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              title: Аудио + модель
+              type: object
+              properties:
+                file:
+                  title: Аудиофайл
+                  type: string
+                  format: binary
+                  description: mp3, wav, m4a, ...
+                model:
+                  title: Модель транскрипции
+                  type: string
+                  example: whisper-1
+                  description: Опционально, по умолчанию авто
+              required:
+                - file
+      responses:
+        "200":
+          description: Распознанный текст
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionResult"
+        "400":
+          $ref: "#/components/responses/400"
+        "500":
+          $ref: "#/components/responses/500"
+
+  /v1/files:
+    post:
+      operationId: files.upload
+      summary: Загрузка файла для RAG
+      description: |
+        Принимает файл (PDF, DOCX, TXT), извлекает текст, разбивает на чанки, считает эмбеддинги и сохраняет в MongoDB.
+      tags:
+        - Files
+      security: []
+      parameters:
+        - name: x-openwebui-user-id
+          in: header
+          required: false
+          description: Идентификатор пользователя — файлы изолированы по нему
+          schema:
+            title: Идентификатор пользователя
+            type: string
+            example: user-42
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              title: Файл
+              type: object
+              properties:
+                file:
+                  title: Документ
+                  type: string
+                  format: binary
+                  description: PDF, DOCX, TXT
+              required:
+                - file
+      responses:
+        "200":
+          description: Файл проиндексирован
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileUploadResult"
+        "400":
+          $ref: "#/components/responses/400"
+        "500":
+          $ref: "#/components/responses/500"
+
+components:
+  schemas:
+    HealthStatus:
+      title: Состояние сервиса
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+          example: ok
+        llm:
+          type: boolean
+          example: true
+        models_available:
+          type: integer
+          example: 12
+
+    ModelInfo:
+      title: Модель
+      type: object
+      properties:
+        id:
+          type: string
+          example: qwen2.5:7b
+        object:
+          type: string
+          example: model
+        owned_by:
+          type: string
+          example: ollama
+
+    ModelList:
+      title: Список моделей
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          example: []
+          items:
+            $ref: "#/components/schemas/ModelInfo"
+
+    Message:
+      title: Сообщение чата
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant, tool]
+          example: user
+        content:
+          oneOf:
+            - type: string
+              example: Привет
+            - type: array
+              example:
+                - type: text
+                  text: Что на картинке
+                - type: image_url
+                  image_url:
+                    url: "data:image/png;base64,..."
+              items:
+                type: object
+      required:
+        - role
+        - content
+
+    ChatRequest:
+      title: Запрос чата
+      type: object
+      properties:
+        model:
+          type: string
+          example: auto
+          description: ID модели или `auto` для автомаршрутизации
+        messages:
+          type: array
+          example:
+            - role: user
+              content: Привет
+          items:
+            $ref: "#/components/schemas/Message"
+        temperature:
+          type: number
+          example: 0.7
+          default: 0.7
+        max_tokens:
+          type: integer
+          example: 1024
+          nullable: true
+        stream:
+          type: boolean
+          example: false
+          default: false
+      required:
+        - model
+        - messages
+
+    ChatChoice:
+      title: Вариант ответа
+      type: object
+      properties:
+        index:
+          type: integer
+          example: 0
+        message:
+          $ref: "#/components/schemas/Message"
+        finish_reason:
+          type: string
+          example: stop
+
+    ChatResponse:
+      title: Ответ модели
+      type: object
+      properties:
+        id:
+          type: string
+          example: chatcmpl-abc123
+        object:
+          type: string
+          example: chat.completion
+        model:
+          type: string
+          example: qwen2.5:7b
+        choices:
+          type: array
+          example: []
+          items:
+            $ref: "#/components/schemas/ChatChoice"
+
+    TranscriptionResult:
+      title: Результат транскрипции
+      type: object
+      properties:
+        text:
+          type: string
+          example: Привет, это распознанный текст
+        model:
+          type: string
+          example: whisper-1
+
+    FileUploadResult:
+      title: Результат загрузки файла
+      type: object
+      properties:
+        id:
+          type: string
+          format: oid
+          example: 5cd951db4008749dd9106a0a
+        filename:
+          type: string
+          example: doc.pdf
+        chunks:
+          type: integer
+          example: 24
+        status:
+          type: string
+          enum: [processed]
+          example: processed
+
+    ErrorResponse:
+      title: Ошибка
+      type: object
+      properties:
+        message:
+          description: Имя ошибки
+          type: string
+        description:
+          description: Расшифровка
+          type: string
+
+  responses:
+    "400":
+      description: Неверные данные для запроса
+      content:
+        application/json:
+          schema:
+            title: Bad Request
+            $ref: "#/components/schemas/ErrorResponse"
+    "404":
+      description: Не найден объект (memory, file context)
+      content:
+        application/json:
+          schema:
+            title: Not Found
+            $ref: "#/components/schemas/ErrorResponse"
+    "500":
+      description: Внутренняя ошибка
+      content:
+        application/json:
+          schema:
+            title: Internal Server Error
+            $ref: "#/components/schemas/ErrorResponse"
